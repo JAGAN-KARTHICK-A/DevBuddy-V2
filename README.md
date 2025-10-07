@@ -50,8 +50,8 @@ Follow these steps to get DevBuddy running on your local machine.
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/your-username/DevBuddy.git](https://github.com/your-username/DevBuddy.git)
-    cd DevBuddy
+    git clone [https://github.com/JAGAN-KARTHICK-A/DevBuddy-V2.git](https://github.com/JAGAN-KARTHICK-A/DevBuddy-V2.git)
+    cd DevBuddy-V2
     ```
     
 2.  **Install the dependencies:**
