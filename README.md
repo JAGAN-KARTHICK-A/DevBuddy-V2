@@ -4,6 +4,29 @@ DevBuddy is a modern, lightweight, and AI-powered desktop code editor built from
 
 Ask your AI assistant to scaffold entire projects, run and debug code, or generate tests, all from a natural language chat interface seamlessly integrated into your development environment.
 
+## 🖼️ Screenshots
+
+<p align="center">
+  <img src="screenshots/s1.png" width="49%">
+  <img src="screenshots/s2.png" width="49%">
+</p>
+<p align="center">
+  <img src="screenshots/s3.png" width="49%">
+  <img src="screenshots/s4.png" width="49%">
+</p>
+<p align="center">
+  <img src="screenshots/s5.png" width="49%">
+  <img src="screenshots/s6.png" width="49%">
+</p>
+<p align="center">
+  <img src="screenshots/s7.png" width="49%">
+  <img src="screenshots/s8.png" width="49%">
+</p>
+<p align="center">
+  <img src="screenshots/s9.png" width="49%">
+  <img src="screenshots/s10.png" width="49%">
+</p>
+
 
 
 ## ✨ Features
@@ -36,29 +59,6 @@ DevBuddy is a comprehensive tool designed for an AI-first workflow.
 * **Frontend:** **HTML5**, **Tailwind CSS**, **JavaScript**
 * **Code Editor Component:** **Monaco Editor**
 * **Terminal Component:** **xterm.js**
-
-## 🖼️ Screenshots
-
-<p align="center">
-  <img src="screenshots/s1.png" width="49%">
-  <img src="screenshots/s2.png" width="49%">
-</p>
-<p align="center">
-  <img src="screenshots/s3.png" width="49%">
-  <img src="screenshots/s4.png" width="49%">
-</p>
-<p align="center">
-  <img src="screenshots/s5.png" width="49%">
-  <img src="screenshots/s6.png" width="49%">
-</p>
-<p align="center">
-  <img src="screenshots/s7.png" width="49%">
-  <img src="screenshots/s8.png" width="49%">
-</p>
-<p align="center">
-  <img src="screenshots/s9.png" width="49%">
-  <img src="screenshots/s10.png" width="49%">
-</p>
 
 ## 🚀 Getting Started
 
