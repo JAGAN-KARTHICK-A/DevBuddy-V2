@@ -49,7 +49,7 @@ class Engine():
         self.__chat = None
         self.__insert_system_command()
     def getConvoHistory(self): return self.__convoHistory
-    def setConvoHistory(self, history): self.__convoHistory = history
+    def setConvoHistory(self, history): self.__convoHistory.extend(history)
     def setModel(self, model, apikey):
         self.__model_name = model
         self.__apiKey = apikey
@@ -138,9 +138,7 @@ class Engine():
         __query = q
         while True:
             __d = self.__get_response(__query)
-            #print(__d)
             __resp = json.loads(__d)
-            #print(__resp)
             if __resp["rtype"] == "msg": return __resp["content"]
             elif __resp["rtype"] == "get-cwd":
                 __query = json.dumps({'type':f'this is the response for your request of {__resp["rtype"]}', 'content':self.__path})
