@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loading DevBuddy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: transparent;
+            overflow: hidden;
+        }
+
+        .splash-container {
+            position: relative;
+            width: 650px;
+            height: 400px;
+            border-radius: 12px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.08);
+            overflow: hidden;
+            background-color: #18181B;
+        }
+        
+        .splash-container::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0);
+            background-size: 20px 20px;
+        }
+
+        .background-glow {
+            position: absolute;
+            width: 1000px;
+            height: 1000px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle, rgba(79, 70, 229, 0.2) 0%, rgba(79, 70, 229, 0) 50%);
+            animation: spin 25s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: translate(-50%, -50%) rotate(0deg); }
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .animated-content {
+            animation: fadeInUp 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            opacity: 0;
+        }
+
+        .log-container {
+            font-family: 'JetBrains Mono', monospace;
+            height: 80px;
+            overflow: hidden;
+        }
+
+        .log-line {
+            opacity: 0;
+            animation: fadeInUp 0.5s ease forwards;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center h-screen">
+    <div class="splash-container">
+        <div class="background-glow"></div>
+        
+        <div class="relative z-10 flex flex-col items-center justify-center h-full text-white p-12">
+            
+            <div class="animated-content flex flex-col items-center text-center" style="animation-delay: 0.1s;">
+                <i data-lucide="box" class="w-20 h-20 text-indigo-400"></i>
+                <h1 class="text-6xl font-black text-gray-100 mt-4">DevBuddy</h1>
+                <p class="text-sm text-indigo-300 tracking-wider">Version 2.0.0</p>
+            </div>
+
+            <div id="log-container" class="log-container w-full mt-8 text-xs text-gray-400 space-y-1">
+                </div>
+        </div>
+        
+        <div class="absolute bottom-4 left-6 text-xs text-gray-600 animated-content" style="animation-delay: 1s;">
+            <span>A AI-Powered IDE by A.Jagan Karthick</span>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        const logContainer = document.getElementById('log-container');
+        const logMessages = [
+            "[OK] Initializing core services...",
+            "[OK] Loading UI components...",
+            "[OK] Connecting to backend...",
+            "[OK] Finalizing startup..."
+        ];
+
+        // This function adds log lines one by one with a delay
+        function showLogs() {
+            logMessages.forEach((message, index) => {
+                setTimeout(() => {
+                    const p = document.createElement('p');
+                    p.className = 'log-line';
+                    p.textContent = message;
+                    // Stagger the animation for each line
+                    p.style.animationDelay = `${index * 100}ms`;
+                    logContainer.appendChild(p);
+                    // Scroll to the bottom
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }, 500 + (index * 400)); // Stagger the appearance of each line
+            });
+        }
+        
+        showLogs();
+    </script>
+</body>
+</html>

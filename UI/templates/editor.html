@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Code Editor</title>
+    <script src="/static/js/tailwind.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="/static/css/jet-brains.css" rel="stylesheet">
+    <script src="/static/js/lucide.min.js"></script>
+    <link rel="stylesheet" href="/static/css/xterm.css" />
+    <script src="/static/js/xterm.js" defer></script>
+    <script src="/static/js/xterm-addon-fit.js" defer></script>
+    <style>
+        :root {
+            --bg-primary: #111827; --bg-secondary: #1f2937; --bg-tabs: #111827;
+            --text-primary: #d1d5db; --text-secondary: #9ca3af; --accent-primary: #4f46e5;
+            --border-color: #374151;
+        }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg-primary); color: var(--text-primary); }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+        .dropdown-menu { transition: opacity 0.1s ease-out, transform 0.1s ease-out; }
+        .toast-item { animation: toast-in 0.3s ease-out forwards, toast-out 0.3s ease-in 3.7s forwards; }
+        @keyframes toast-in { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes toast-out { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(100%); } }
+        .activity-btn.active { background-color: var(--accent-primary); color: white; }
+        .tab-item.dirty { border-left: 2px solid #60a5fa; }
+        .menu-item.disabled-item { color: #6b7280; cursor: not-allowed; }
+        .menu-item:not(.disabled-item):hover { background-color: var(--accent-primary); color: white; }
+        .top-menu-btn:not(.disabled-item):hover { background-color: var(--border-color); }
+        .file-tree-entry:hover { background-color: var(--border-color); }
+        .dragging { opacity: 0.5; }
+        .resizing { user-select: none; }
+        .xterm .xterm-viewport { background-color: transparent !important; }
+        .terminal-tab.active { background-color: var(--bg-primary); color: var(--text-primary); }
+    </style>
+    <script src="/static/js/monaco-loader.js" defer></script>
+</head>
+<body class="flex flex-col h-screen overflow-hidden select-none">
+
+    <header id="top-menubar" class="text-sm h-10 flex items-center px-2 space-x-1 flex-shrink-0 z-30 border-b" style="background-color: var(--bg-secondary); border-color: var(--border-color);"></header>
+    
+    <div class="flex flex-grow overflow-hidden">
+        <div id="activity-bar" class="w-12 flex flex-col items-center justify-between py-4 flex-shrink-0 border-r" style="background-color: var(--bg-primary); border-color: var(--border-color);">
+            <div class="flex flex-col items-center space-y-2">
+                <button data-action="toggle-sidebar:explorer" class="activity-btn p-2 rounded-lg text-gray-400 hover:bg-gray-700" title="Toggle File Explorer"><i data-lucide="files" class="w-6 h-6 pointer-events-none"></i></button>
+                <button data-action="toggle-sidebar:chat" class="activity-btn p-2 rounded-lg text-gray-400 hover:bg-gray-700" title="Toggle Chat"><i data-lucide="message-square" class="w-6 h-6 pointer-events-none"></i></button>
+            </div>
+            <div class="flex flex-col items-center space-y-2">
+                 <button data-action="toggle-sidebar:settings" class="activity-btn p-2 rounded-lg text-gray-400 hover:bg-gray-700" title="Settings"><i data-lucide="settings" class="w-6 h-6 pointer-events-none"></i></button>
+            </div>
+        </div>
+
+        <aside id="sidebar" class="w-64 flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out border-r" style="background-color: var(--bg-secondary); border-color: var(--border-color);">
+            <div id="explorer-panel" class="p-2 h-full"><div class="h-full file-tree-container overflow-y-auto"><h2 class="text-sm font-bold uppercase tracking-wider px-2 mb-2" style="color: var(--text-secondary);">Explorer</h2><div id="file-tree"><div class="flex items-center justify-center p-4"><i data-lucide="loader-2" class="animate-spin"></i></div></div></div></div>
+            <div id="chat-panel" class="hidden p-2 h-full flex flex-col">
+                <h2 class="text-sm font-bold uppercase tracking-wider px-2 mb-2 flex-shrink-0" style="color: var(--text-secondary);">Chat</h2>
+                
+                <div id="chat-history" class="flex-grow rounded-md p-3 text-sm overflow-y-auto space-y-4" style="background-color: var(--bg-primary);">
+                    <div class="text-gray-400 text-center text-xs">This is the beginning of your chat.</div>
+                </div>
+
+                <div class="mt-2 flex-shrink-0">
+                    <input type="text" id="chat-input" placeholder="Type a message and press Enter..." class="w-full border text-sm rounded-lg p-2.5" style="background-color: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);">
+                </div>
+            </div>
+            <div id="settings-panel" class="hidden p-2 h-full">
+                <div class="h-full overflow-y-auto p-2 space-y-6">
+                    <h2 class="text-xl font-bold">Settings</h2>
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-semibold border-b" style="border-color: var(--border-color);">Appearance</h3>
+                        <div>
+                            <label for="font-family-select" class="block text-sm font-medium mb-1" style="color: var(--text-secondary);">Font Family</label>
+                            <select id="font-family-select" class="w-full border text-sm rounded-lg p-2" style="background-color: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);">
+                                <option>'JetBrains Mono', monospace</option><option>'Fira Code', monospace</option><option>'Source Code Pro', monospace</option>
+                                <option>'Cascadia Code', monospace</option><option>'Victor Mono', monospace</option><option>'IBM Plex Mono', monospace</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="font-size-input" class="block text-sm font-medium mb-1" style="color: var(--text-secondary);">Font Size</label>
+                            <input type="number" id="font-size-input" value="14" min="8" max="30" class="w-full border text-sm rounded-lg p-2" style="background-color: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);">
+                        </div>
+                        <div>
+                            <label for="font-weight-select" class="block text-sm font-medium mb-1" style="color: var(--text-secondary);">Font Weight</label>
+                            <select id="font-weight-select" class="w-full border text-sm rounded-lg p-2" style="background-color: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);">
+                                <option>normal</option><option>bold</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="line-height-input" class="block text-sm font-medium mb-1" style="color: var(--text-secondary);">Line Height</label>
+                            <input type="number" id="line-height-input" value="1.6" min="1" max="3" step="0.1" class="w-full border text-sm rounded-lg p-2" style="background-color: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);">
+                        </div>
+                        <div>
+                            <label for="theme-select" class="block text-sm font-medium mb-1" style="color: var(--text-secondary);">Theme</label>
+                            <select id="theme-select" class="w-full border text-sm rounded-lg p-2" style="background-color: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);">
+                                <option value="vortex-dark">Vortex Dark</option><option value="monokai-pro">Monokai Pro</option><option value="nord">Nord</option>
+                                <option value="solarized-light">Solarized Light</option><option value="github-light">GitHub Light</option><option value="ayu-light">Ayu Light</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <main class="flex-grow flex flex-col overflow-hidden">
+            <div id="tabs-container" class="flex-shrink-0 flex items-end border-b overflow-x-auto flex-nowrap" style="background-color: var(--bg-tabs); border-color: var(--border-color);"><div class="px-4 py-2" style="color: var(--text-secondary);">No file open</div></div>
+            <div class="flex-grow relative">
+                <div id="welcome-screen" class="w-full h-full flex flex-col items-center justify-center p-8 select-none" style="background-color: var(--bg-primary);">
+                    <h1 class="text-8xl font-black opacity-10" style="color: var(--text-secondary);">DevBuddy</h1><br>
+                    <h1 class="text-2xl font-black opacity-10" style="color: var(--text-secondary);">Developed by - A.Jagan Karthick</h1><br>
+                    <div class="mt-8 grid grid-cols-2 gap-x-12 gap-y-4 text-sm" style="color: var(--text-secondary);">
+                        <div class="flex items-center gap-4"><span class="font-semibold text-right w-28" style="color: var(--text-primary);">Save File</span><kbd class="px-2 py-1.5 text-xs font-semibold rounded-md" style="background-color: var(--bg-secondary); border: 1px solid var(--border-color);">Ctrl + S</kbd></div>
+                        <div class="flex items-center gap-4"><span class="font-semibold text-right w-28" style="color: var(--text-primary);">Rename File</span><kbd class="px-2 py-1.5 text-xs font-semibold rounded-md" style="background-color: var(--bg-secondary); border: 1px solid var(--border-color);">F2</kbd></div>
+                        <div class="flex items-center gap-4"><span class="font-semibold text-right w-28" style="color: var(--text-primary);">Zoom In / Out</span><div class="flex gap-2"><kbd class="px-2 py-1.5 text-xs font-semibold rounded-md" style="background-color: var(--bg-secondary); border: 1px solid var(--border-color);">Ctrl +</kbd><kbd class="px-2 py-1.5 text-xs font-semibold rounded-md" style="background-color: var(--bg-secondary); border: 1px solid var(--border-color);">Ctrl -</kbd></div></div>
+                        <div class="flex items-center gap-4"><span class="font-semibold text-right w-28" style="color: var(--text-primary);">Toggle Terminal</span><kbd class="px-2 py-1.5 text-xs font-semibold rounded-md" style="background-color: var(--bg-secondary); border: 1px solid var(--border-color);">Ctrl + `</kbd></div>
+                    </div>
+                </div>
+                <div id="editor-container" class="hidden absolute inset-0"></div>
+            </div>
+
+            <div id="terminal-panel" class="hidden h-64 flex-shrink-0 flex flex-col border-t" style="background-color: var(--bg-primary); border-color: var(--border-color);">
+                <div id="terminal-dragger" class="flex items-center p-2 text-xs border-b cursor-row-resize" style="background-color: var(--bg-secondary); border-color: var(--border-color);">
+                    <div id="terminal-tabs" class="flex items-center text-sm"></div>
+                    <button data-action="new-terminal" class="p-1 rounded-md" title="New Terminal"><i data-lucide="plus" class="w-4 h-4 pointer-events-none"></i></button>
+                </div>
+                <div id="terminal-views" class="flex-grow relative overflow-hidden"></div>
+            </div>
+        </main>
+    </div>
+
+    <footer id="status-bar" class="text-sm h-6 flex items-center justify-between px-4 flex-shrink-0 z-20 border-t" style="background-color: var(--bg-secondary); border-color: var(--border-color);">
+        <div id="status-left"><span id="status-file-path">No file selected</span></div>
+        <div id="status-right" class="flex items-center gap-4"><span id="status-save-state"></span><span id="status-language"></span></div>
+    </footer>
+
+    <div id="context-menu" class="hidden fixed backdrop-blur-sm border text-sm rounded-md shadow-lg p-1.5 min-w-[180px] z-50" style="background-color: var(--bg-secondary); border-color: var(--border-color);"></div>
+    <div id="toast-container" class="fixed bottom-8 right-4 w-80 space-y-2 z-50"></div>
+
+    <div id="confirm-overlay" class="hidden fixed inset-0 z-40" style="background-color: rgba(0,0,0,0.5);"></div>
+    <div id="confirm-modal" class="hidden fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md p-6 rounded-lg shadow-lg" style="background-color: var(--bg-secondary); border: 1px solid var(--border-color);">
+        <h3 id="confirm-title" class="text-lg font-semibold" style="color: var(--text-primary);">Delete Confirmation</h3>
+        <p id="confirm-message" class="mt-2 text-sm" style="color: var(--text-secondary);">Are you sure you want to proceed?</p>
+        <div class="mt-6 flex justify-end space-x-4">
+            <button id="confirm-btn-cancel" class="px-4 py-2 text-sm font-medium rounded-md" style="background-color: var(--border-color); color: var(--text-primary);">Cancel</button>
+            <button id="confirm-btn-delete" class="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md">Delete</button>
+        </div>
+    </div>
+
+    <div id="about-overlay" class="hidden fixed inset-0 z-40" style="background-color: rgba(0,0,0,0.7);"></div>
+    <div id="about-modal" class="hidden fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-lg rounded-lg shadow-xl" style="background-color: var(--bg-secondary); border: 1px solid var(--border-color);">
+        <div class="relative p-8">
+            <button data-action="toggle-about" class="absolute top-4 right-4 p-1 rounded-full" style="color: var(--text-secondary);"><i data-lucide="x" class="w-5 h-5 pointer-events-none"></i></button>
+            
+            <div class="flex items-center space-x-4">
+                <i data-lucide="box" class="w-16 h-16" style="color: var(--accent-primary);"></i>
+                <div>
+                    <h2 class="text-3xl font-bold" style="color: var(--text-primary);">DevBuddy</h2>
+                    <p class="text-sm" style="color: var(--text-secondary);">Version 2.0.0</p>
+                </div>
+            </div>
+
+            <p class="mt-6 text-sm" style="color: var(--text-secondary);">
+                A lightweight, modern code editor built with Python, pywebview, and Monaco. Designed to be a simple yet powerful companion for your development projects.
+            </p>
+
+            <div class="mt-6">
+                <h4 class="font-semibold" style="color: var(--text-primary);">Author Information</h4>
+                <div class="mt-2 flex items-center space-x-6 text-sm">
+                    <span style="color: var(--text-primary);">A.Jagan Karthick</span>
+                    <a href="https://github.com/JAGAN-KARTHICK-A/" target="_blank" class="flex items-center gap-1.5" style="color: var(--text-secondary);"><i data-lucide="github" class="w-4 h-4"></i> GitHub</a>
+                    <a href="https://www.linkedin.com/in/JaganKarthick/" target="_blank" class="flex items-center gap-1.5" style="color: var(--text-secondary);"><i data-lucide="linkedin" class="w-4 h-4"></i> LinkedIn</a>
+                    <a href="https://jagankarthick.tech/" target="_blank" class="flex items-center gap-1.5" style="color: var(--text-secondary);"><i data-lucide="globe" class="w-4 h-4"></i> Portfolio</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const sidebarEl = document.getElementById('sidebar'), explorerPanel = document.getElementById('explorer-panel');
+        const chatPanel = document.getElementById('chat-panel'), settingsPanel = document.getElementById('settings-panel');
+        const fileTreeEl = document.getElementById('file-tree'), contextMenuEl = document.getElementById('context-menu');
+        const topMenubar = document.getElementById('top-menubar'), editorContainerEl = document.getElementById('editor-container');
+        const tabsContainerEl = document.getElementById('tabs-container'), statusFilePath = document.getElementById('status-file-path');
+        const statusSaveState = document.getElementById('status-save-state'), statusLanguage = document.getElementById('status-language');
+        const toastContainer = document.getElementById('toast-container');
+        const fontFamilySelect = document.getElementById('font-family-select'), fontSizeInput = document.getElementById('font-size-input');
+        const fontWeightSelect = document.getElementById('font-weight-select'), lineHeightInput = document.getElementById('line-height-input');
+        const themeSelect = document.getElementById('theme-select');
+        const terminalPanel = document.getElementById('terminal-panel');
+        const terminalDragger = document.getElementById('terminal-dragger');
+        const terminalViews = document.getElementById('terminal-views');
+        const terminalTabs = document.getElementById('terminal-tabs');
+        const statusBar = document.getElementById('status-bar');
+        const confirmOverlay = document.getElementById('confirm-overlay');
+        const confirmModal = document.getElementById('confirm-modal');
+        const confirmMessage = document.getElementById('confirm-message');
+        const confirmBtnCancel = document.getElementById('confirm-btn-cancel');
+        const confirmBtnDelete = document.getElementById('confirm-btn-delete');
+        const chatHistory = document.getElementById('chat-history');
+        const chatInput = document.getElementById('chat-input');
+        const aboutOverlay = document.getElementById('about-overlay');
+        const aboutModal = document.getElementById('about-modal');
+
+        let editor, projectPath, activeFile = null, refreshInterval, isInlineInputActive = false;
+        let openFiles = new Map(), activeView = 'explorer';
+        let isPywebviewReady = false, isEditorReady = false;
+        let terminalSessions = new Map(), activeTerminalId = null, terminalCounter = 0;
+        
+
+        const themes = {
+            'vortex-dark': { monacoTheme: 'vs-dark', '--bg-primary': '#111827', '--bg-secondary': '#1f2937', '--bg-tabs': '#111827', '--text-primary': '#d1d5db', '--text-secondary': '#9ca3af', '--accent-primary': '#4f46e5', '--border-color': '#374151' },
+            'monokai-pro': { monacoTheme: 'vs-dark', '--bg-primary': '#2D2A2E', '--bg-secondary': '#221F22', '--bg-tabs': '#221F22', '--text-primary': '#FCFCFA', '--text-secondary': '#727072', '--accent-primary': '#FF6188', '--border-color': '#403E41' },
+            'nord': { monacoTheme: 'vs-dark', '--bg-primary': '#2E3440', '--bg-secondary': '#3B4252', '--bg-tabs': '#2E3440', '--text-primary': '#D8DEE9', '--text-secondary': '#4C566A', '--accent-primary': '#88C0D0', '--border-color': '#434C5E' },
+            'solarized-light': { monacoTheme: 'vs', '--bg-primary': '#fdf6e3', '--bg-secondary': '#eee8d5', '--bg-tabs': '#fdf6e3', '--text-primary': '#657b83', '--text-secondary': '#93a1a1', '--accent-primary': '#268bd2', '--border-color': '#eee8d5' },
+            'github-light': { monacoTheme: 'vs', '--bg-primary': '#ffffff', '--bg-secondary': '#f6f8fa', '--bg-tabs': '#ffffff', '--text-primary': '#24292e', '--text-secondary': '#586069', '--accent-primary': '#0366d6', '--border-color': '#e1e4e8' },
+            'ayu-light': { monacoTheme: 'vs', '--bg-primary': '#fafafa', '--bg-secondary': '#f2f2f2', '--bg-tabs': '#fafafa', '--text-primary': '#5c6773', '--text-secondary': '#8a9199', '--accent-primary': '#ff8f40', '--border-color': '#e6e6e6' }
+        };
+        
+        let currentSettings = {
+            theme: 'vortex-dark', fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 14, fontWeight: 'normal', lineHeight: 1.6
+        };
+
+        function applyTheme(themeName) { const theme = themes[themeName]; if (!theme) return; currentSettings.theme = themeName; for (const [key, value] of Object.entries(theme)) { if(key !== 'monacoTheme') document.documentElement.style.setProperty(key, value); } if (editor && theme.monacoTheme) { monaco.editor.setTheme(theme.monacoTheme); } }
+        function applyAppearanceSettings() { if (editor) { editor.updateOptions({ fontFamily: currentSettings.fontFamily, fontSize: currentSettings.fontSize, fontWeight: currentSettings.fontWeight, lineHeight: currentSettings.lineHeight * currentSettings.fontSize }); } }
+        function saveSettings() { localStorage.setItem('editorSettings', JSON.stringify(currentSettings)); }
+        function loadSettings() { const savedSettings = localStorage.getItem('editorSettings'); if (savedSettings) { currentSettings = { ...currentSettings, ...JSON.parse(savedSettings) }; } themeSelect.value = currentSettings.theme; fontFamilySelect.value = currentSettings.fontFamily; fontSizeInput.value = currentSettings.fontSize; fontWeightSelect.value = currentSettings.fontWeight; lineHeightInput.value = currentSettings.lineHeight; applyTheme(currentSettings.theme); applyAppearanceSettings(); }
+
+        function toggleAboutModal() {
+            const isHidden = aboutModal.classList.contains('hidden');
+            if (isHidden) {
+                // Call this to render the new icons inside the modal
+                lucide.createIcons({
+                    nodes: [aboutModal]
+                });
+            }
+            aboutOverlay.classList.toggle('hidden');
+            aboutModal.classList.toggle('hidden');
+        }
+
+        async function initializeApp() {
+            if (!isPywebviewReady || !isEditorReady) return; 
+            lucide.createIcons();
+            loadSettings();
+            const data = await window.pywebview.api.get_project_data();
+            if (data && data.file_tree) {
+                projectPath = data.project_path;
+                generateTopMenuBar();
+                await refreshFileTree();
+                if (refreshInterval) clearInterval(refreshInterval);
+                refreshInterval = setInterval(refreshFileTree, 2000);
+                updateStatusBar(null);
+                setView('explorer');
+            } else { fileTreeEl.innerHTML = '<p class="text-xs text-red-400 p-2">Could not load project.</p>'; }
+        }
+        window.addEventListener('pywebviewready', () => { isPywebviewReady = true; initializeApp(); });
+        require.config({ paths: { 'vs': 'https://cdn.jsdelivr.net/npm/monaco-editor@0.41.0/min/vs' }});
+        require(['vs/editor/editor.main'], () => {
+            editor = monaco.editor.create(editorContainerEl, {
+                theme: 'vs-dark', automaticLayout: false, minimap: { enabled: true }, readOnly: true
+            });
+            isEditorReady = true;
+            const observer = new ResizeObserver(() => editor.layout());
+            observer.observe(editorContainerEl);
+            initializeApp();
+        });
+        
+        function showToast(message, type = 'success') { const colors = { success: 'bg-green-600', error: 'bg-red-600', info: 'bg-blue-600' }; const icon = type === 'success' ? 'check-circle' : 'alert-triangle'; const toast = document.createElement('div'); toast.className = `toast-item flex items-center gap-3 text-white text-sm ${colors[type]} p-3 rounded-lg shadow-lg`; toast.innerHTML = `<i data-lucide="${icon}" class="w-5 h-5"></i><span>${message}</span>`; toastContainer.appendChild(toast); lucide.createIcons(); setTimeout(() => toast.remove(), 4000); }
+        function updateStatusBar(filePath, isDirty, language) { if (filePath) { statusFilePath.textContent = filePath.replace(projectPath, '...').replace(/\\/g, '/'); statusSaveState.textContent = isDirty ? '● Unsaved' : '✓ Saved'; statusSaveState.className = isDirty ? 'text-yellow-400' : 'text-green-400'; statusLanguage.textContent = language ? language.charAt(0).toUpperCase() + language.slice(1) : ''; } else { statusFilePath.textContent = 'No file selected'; statusSaveState.textContent = ''; statusLanguage.textContent = ''; } }
+        function hideAllMenus() { contextMenuEl.classList.add('hidden'); topMenubar.querySelectorAll('.dropdown-menu').forEach(menu => menu.classList.add('hidden', 'opacity-0', 'scale-95')); }
+        function showConfirmDialog(message) {
+            return new Promise(resolve => {
+                confirmMessage.textContent = message;
+                confirmOverlay.classList.remove('hidden');
+                confirmModal.classList.remove('hidden');
+
+                confirmBtnDelete.onclick = () => {
+                    hideConfirmDialog();
+                    resolve(true);
+                };
+                confirmBtnCancel.onclick = () => {
+                    hideConfirmDialog();
+                    resolve(false);
+                };
+                confirmOverlay.onclick = () => {
+                    hideConfirmDialog();
+                    resolve(false);
+                };
+            });
+        }
+
+        function hideConfirmDialog() {
+            confirmOverlay.classList.add('hidden');
+            confirmModal.classList.add('hidden');
+            // Clear the onclick handlers to prevent multiple listeners
+            confirmBtnDelete.onclick = null;
+            confirmBtnCancel.onclick = null;
+            confirmOverlay.onclick = null;
+        }
+        function getLanguageForFile(fileName) { const ext = fileName.split('.').pop().toLowerCase(); return {js: 'javascript', ts: 'typescript', py: 'python', html: 'html', css: 'css', json: 'json', md: 'markdown', java:"java"}[ext] || 'plaintext'; }
+        const folderIcons = {
+            'src': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/folder_type_src.svg',
+            'dist': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/folder_type_dist.svg',
+            'lib': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/folder_type_library.svg',
+            '.git': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/folder_type_git.svg',
+            'node_modules': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/folder_type_node.svg',
+            'images': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/folder_type_images.svg',
+            'img': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/folder_type_images.svg',
+        };
+
+        const fileIcons = {
+            'py': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_python.svg',
+            'java': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_java.svg',
+            'js': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_js.svg',
+            'ts': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_typescript.svg',
+            'html': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_html.svg',
+            'css': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_css.svg',
+            'json': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_json.svg',
+            'md': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_markdown.svg',
+            'c': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_c.svg',
+            'cpp': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_cpp.svg',
+            'cs': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_csharp.svg',
+            'go': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_go.svg',
+            'rust': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_rust.svg',
+            'rb': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_ruby.svg',
+            'php': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_php.svg',
+            'yml': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_yaml.svg',
+            'yaml': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_yaml.svg',
+            'xml': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_xml.svg',
+            'sh': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_shell.svg',
+            'dockerfile': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_docker.svg',
+            'png': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_image.svg',
+            'jpg': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_image.svg',
+            'jpeg': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_image.svg',
+            'gif': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_image.svg',
+            'webp': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_image.svg',
+            'svg': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_image.svg',
+            'gitignore': 'https://raw.githubusercontent.com/vscode-icons/vscode-icons/master/icons/file_type_git.svg'
+        };
+        function getIconForFile(fileName, type) {
+            const lowerFileName = fileName.toLowerCase();
+            if (type === 'folder') {
+                const iconUrl = folderIcons[lowerFileName];
+                return iconUrl 
+                    ? `<img src="${iconUrl}" class="w-4 h-4 flex-shrink-0">`
+                    : `<i data-lucide="folder" class="w-4 h-4 flex-shrink-0"></i>`;
+            }
+            
+            const extension = lowerFileName.split('.').pop();
+            // Check for full filename match first (e.g., 'dockerfile')
+            let iconUrl = fileIcons[lowerFileName] || fileIcons[extension];
+            
+            if (iconUrl) {
+                return `<img src="${iconUrl}" class="w-4 h-4 flex-shrink-0">`;
+            }
+            return `<i data-lucide="file" class="w-4 h-4 flex-shrink-0"></i>`;
+        }
+        function toggleEditorVisibility(show) { if (show) { editorContainerEl.classList.remove('hidden'); welcomeScreen.classList.add('hidden'); } else { editorContainerEl.classList.add('hidden'); welcomeScreen.classList.remove('hidden'); } }
+        
+        function zoomIn() { if(!editor) return; currentSettings.fontSize = Math.min(30, currentSettings.fontSize + 1); fontSizeInput.value = currentSettings.fontSize; applyAppearanceSettings(); saveSettings(); }
+        function zoomOut() { if(!editor) return; currentSettings.fontSize = Math.max(8, currentSettings.fontSize - 1); fontSizeInput.value = currentSettings.fontSize; applyAppearanceSettings(); saveSettings(); }
+        function resetZoom() { if(!editor) return; currentSettings.fontSize = 14; fontSizeInput.value = currentSettings.fontSize; applyAppearanceSettings(); saveSettings(); }
+        async function saveActiveFile() { if (!activeFile || !editor) return; const filePath = activeFile; const fileData = openFiles.get(filePath); const content = editor.getValue(); const response = await window.pywebview.api.save_file(filePath, content); if (response.status === 'success') { fileData.isDirty = false; fileData.tabEl.classList.remove('dirty'); fileData.tabEl.querySelector('.unsaved-dot').classList.add('hidden'); updateStatusBar(filePath, false, fileData.language); showToast(`'${filePath.split(/[\\/]/).pop()}' saved.`); updateSaveStateInUI(); } else { showToast(`Failed to save file: ${response.message}`, 'error'); } }
+        function removeCreatorInput() { const inputEl = document.getElementById('creator-input-container'); if (inputEl) { inputEl.remove(); } isInlineInputActive = false; }
+        function showCreatorInput(type, path) { if (isInlineInputActive) return; isInlineInputActive = true; hideAllMenus(); const icon = type === 'file' ? 'file' : 'folder'; const container = document.createElement('div'); container.id = 'creator-input-container'; container.className = 'p-1 flex items-center gap-2 text-sm'; container.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4"></i><input type="text" id="inline-input" class="w-full border text-sm rounded-lg p-1" style="background-color: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);">`; const parentFolderEl = document.querySelector(`details[data-path="${CSS.escape(path)}"]`); if (parentFolderEl) { const childContainer = parentFolderEl.querySelector('div.ml-4'); childContainer.prepend(container); parentFolderEl.open = true; } else { fileTreeEl.prepend(container); } lucide.createIcons(); const input = document.getElementById('inline-input'); input.focus(); const onFinish = async (e) => { if (e.type === 'keydown' && e.key !== 'Enter') return; const name = input.value.trim(); removeCreatorInput(); if (name) { const newPath = `${path}/${name}`; if (type === 'file') await window.pywebview.api.create_file(newPath); else await window.pywebview.api.create_folder(newPath); await refreshFileTree(); showToast(`${type.charAt(0).toUpperCase() + type.slice(1)} '${name}' created.`); } }; input.addEventListener('keydown', onFinish); input.addEventListener('blur', onFinish); input.addEventListener('keydown', e => { if (e.key === 'Escape') removeCreatorInput(); }); }
+        function showRenameInput(itemElement) { if (isInlineInputActive) return; isInlineInputActive = true; hideAllMenus(); const oldPath = itemElement.dataset.path; const entryDiv = itemElement.querySelector('.file-tree-entry'); const nameSpan = entryDiv.querySelector('span'); const oldName = nameSpan.textContent; const input = document.createElement('input'); input.type = 'text'; input.id = 'inline-input'; input.className = 'w-full border text-sm rounded-lg p-1'; input.style = "background-color: var(--bg-primary); border-color: var(--border-color); color: var(--text-primary);"; input.value = oldName; nameSpan.replaceWith(input); input.focus(); input.select(); const onFinish = async (e) => { if (e.type === 'keydown' && e.key !== 'Enter') return; const newName = input.value.trim(); input.replaceWith(nameSpan); isInlineInputActive = false; if (newName && newName !== oldName) { const newPath = oldPath.substring(0, oldPath.lastIndexOf('/') + 1) + newName; const res = await window.pywebview.api.rename_item(oldPath, newPath); if (res.status === 'success') showToast(`Renamed to '${newName}'.`); else showToast(`Error: ${res.message}`, 'error'); await refreshFileTree(); } }; input.addEventListener('keydown', onFinish); input.addEventListener('blur', onFinish); input.addEventListener('keydown', e => { if (e.key === 'Escape') { input.replaceWith(nameSpan); isInlineInputActive = false; }}); }
+        async function handleDelete(path, name) {
+            hideAllMenus();
+            const confirmed = await showConfirmDialog(`Are you sure you want to permanently delete '${name}'? This action cannot be undone.`);
+            if (confirmed) {
+                const res = await window.pywebview.api.delete_item(path);
+                if (res.status === 'success') {
+                    showToast(`'${name}' deleted.`, 'info');
+                } else {
+                    showToast(`Error deleting: ${res.message}`, 'error');
+                }
+                await refreshFileTree();
+            }
+        }
+        
+        function setView(viewName) { explorerPanel.classList.add('hidden'); chatPanel.classList.add('hidden'); settingsPanel.classList.add('hidden'); document.querySelectorAll('#activity-bar .activity-btn').forEach(b => b.classList.remove('active')); const btn = document.querySelector(`#activity-bar [data-action="toggle-sidebar:${viewName}"]`); if (viewName === 'explorer') { explorerPanel.classList.remove('hidden'); if(btn) btn.classList.add('active'); } else if (viewName === 'chat') { chatPanel.classList.remove('hidden'); if(btn) btn.classList.add('active'); } else if (viewName === 'settings') { settingsPanel.classList.remove('hidden'); if(btn) btn.classList.add('active');} sidebarEl.classList.add('w-64'); sidebarEl.classList.remove('w-0'); activeView = viewName; }
+        function toggleSidebar(viewToOpen) { const isSidebarClosed = !sidebarEl.classList.contains('w-64'); if (isSidebarClosed) { setView(viewToOpen); } else if (activeView === viewToOpen) { sidebarEl.classList.remove('w-64'); sidebarEl.classList.add('w-0'); document.querySelectorAll('#activity-bar .activity-btn').forEach(b => b.classList.remove('active')); } else { setView(viewToOpen); } if (editor) { setTimeout(() => editor.layout(), 310); } }
+        
+        // FIX: The complete, correct set of terminal functions is now present.
+        function toggleTerminal() {
+            terminalPanel.classList.toggle('hidden');
+            if (editor) { editor.layout(); }
+            if (terminalSessions.size === 0 && !terminalPanel.classList.contains('hidden')) {
+                createNewTerminal();
+            }
+            const activeSession = terminalSessions.get(activeTerminalId);
+            if (activeSession && !terminalPanel.classList.contains('hidden')) {
+                activeSession.fitAddon.fit();
+                activeSession.term.focus();
+            }
+        }
+        function createNewTerminal() {
+            if (typeof Terminal === 'undefined' || typeof FitAddon === 'undefined' || typeof FitAddon.FitAddon === 'undefined') {
+                showToast("Terminal library not loaded yet. Please wait.", "error");
+                return null; // Return null on failure
+            }
+            
+            terminalPanel.classList.remove('hidden');
+
+            terminalCounter++;
+            const termId = `term-${terminalCounter}`;
+            
+            const viewEl = document.createElement('div');
+            viewEl.id = termId;
+            viewEl.className = 'terminal-view absolute inset-0';
+            terminalViews.appendChild(viewEl);
+
+            const tabEl = document.createElement('div');
+            tabEl.className = 'terminal-tab flex items-center gap-2 px-3 py-1 text-sm cursor-pointer border-r';
+            tabEl.style.borderColor = 'var(--border-color)';
+            tabEl.dataset.action = 'switch-terminal';
+            tabEl.dataset.termId = termId;
+            tabEl.draggable = true;
+            tabEl.innerHTML = `<span>${terminalCounter}: shell</span><button data-action="close-terminal" data-term-id="${termId}" class="p-1 rounded-full hover:bg-gray-700"><i data-lucide="x" class="w-4 h-4 pointer-events-none"></i></button>`;
+            terminalTabs.appendChild(tabEl);
+            lucide.createIcons();
+
+            const term = new Terminal({ cursorBlink: true, fontFamily: currentSettings.fontFamily, fontSize: currentSettings.fontSize, theme: { background: 'transparent', foreground: 'var(--text-primary)' } });
+            const fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            term.open(viewEl);
+
+            const terminalWs = new WebSocket('ws://127.0.0.1:3002'); // Ensure this port matches your terminal_bridge.py
+            const session = { id: termId, term, fitAddon, websocket: terminalWs, tabEl, viewEl };
+            terminalSessions.set(termId, session);
+
+            terminalWs.onopen = () => {
+                setTimeout(() => {
+                    fitAddon.fit();
+                    terminalWs.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+                }, 10);
+            };
+            terminalWs.onmessage = (event) => {
+                term.write(event.data);
+            }
+            terminalWs.onclose = () => { showToast(`Terminal ${terminalCounter} disconnected.`, 'error'); session.tabEl.style.textDecoration = 'line-through'; };
+            //term.onData((data) => { if(terminalWs.readyState === 1) terminalWs.send(data); });
+            term.onKey(({ key }) => {
+                if (terminalWs.readyState === 1) {
+                    terminalWs.send(key);
+                }
+            });
+
+            setActiveTerminal(termId);
+
+            // FIX: Explicitly return the new terminal ID
+            return termId;
+        }
+        function setActiveTerminal(termId) {
+            if (activeTerminalId === termId) return;
+            terminalSessions.forEach(session => {
+                session.tabEl.classList.remove('active');
+                session.viewEl.classList.add('hidden');
+            });
+            const session = terminalSessions.get(termId);
+            if (session) {
+                session.tabEl.classList.add('active');
+                session.viewEl.classList.remove('hidden');
+                session.fitAddon.fit();
+                session.term.focus();
+                activeTerminalId = termId;
+            }
+        }
+        function closeTerminal(termId) {
+            const session = terminalSessions.get(termId);
+            if (!session) return;
+            session.websocket.close();
+            session.term.dispose();
+            session.tabEl.remove();
+            session.viewEl.remove();
+            terminalSessions.delete(termId);
+            if (activeTerminalId === termId) {
+                activeTerminalId = null;
+                const remainingTerminals = Array.from(terminalSessions.keys());
+                if (remainingTerminals.length > 0) {
+                    setActiveTerminal(remainingTerminals[remainingTerminals.length - 1]);
+                } else {
+                    terminalPanel.classList.add('hidden');
+                    if(editor) editor.layout();
+                }
+            }
+        }
+
+        function updateSaveStateInUI() { const isSaveable = activeFile && openFiles.has(activeFile) && openFiles.get(activeFile).isDirty; document.querySelectorAll('[data-action="save"]').forEach(el => { if (isSaveable) { el.classList.remove('disabled-item'); } else { el.classList.add('disabled-item'); } }); }
+        function generateTopMenuBar() { const menuConfig = [ { name: 'File', items: [ { name: 'New File...', action: 'new-file', path: projectPath }, { name: 'New Folder...', action: 'new-folder', path: projectPath }, { hr: true }, { name: 'Save', action: 'save', shortcut: 'Ctrl+S' }, { hr: true }, { name: 'Refresh Explorer', action: 'refresh-explorer' }, { hr: true }, { name: 'Exit', action: 'exit-app' } ]}, { name: 'Edit', items: [ { name: 'Toggle Chat Panel', action: 'toggle-sidebar:chat' } ]}, { name: 'View', items: [ { name: 'Zoom In', action: 'zoom-in' }, { name: 'Zoom Out', action: 'zoom-out' }, { name: 'Reset Zoom', action: 'reset-zoom' } ]}, { name: 'Terminal', items: [ { name: 'New Terminal', action: 'new-terminal' } ]}, { name: 'Help', items: [ { name: 'About', action: 'show-about' } ]} ]; topMenubar.innerHTML = ''; menuConfig.forEach(menu => { const menuDiv = document.createElement('div'); menuDiv.className = 'relative'; const button = document.createElement('button'); button.className = 'top-menu-btn px-3 py-1 rounded-md'; button.textContent = menu.name; const dropdown = document.createElement('div'); dropdown.className = 'dropdown-menu hidden absolute left-0 mt-2 w-60 border text-white rounded-md shadow-lg p-1.5 transform scale-95 opacity-0'; dropdown.style.backgroundColor = 'var(--bg-secondary)'; dropdown.style.borderColor = 'var(--border-color)'; menu.items.forEach(item => { if (item.hr) { dropdown.innerHTML += `<hr style="border-color: var(--border-color);" class="my-1">`; } else { const itemDiv = document.createElement('div'); itemDiv.className = 'menu-item flex justify-between px-3 py-1.5 rounded cursor-pointer'; itemDiv.dataset.action = item.action; if (item.path) itemDiv.dataset.path = item.path; itemDiv.innerHTML = `<span>${item.name}</span>${item.shortcut ? `<span style="color: var(--text-secondary);">${item.shortcut}</span>` : ''}`; dropdown.appendChild(itemDiv); } }); menuDiv.append(button, dropdown); topMenubar.appendChild(menuDiv); }); }
+        
+        async function openFile(filePath, fileName) { if (openFiles.has(filePath)) { setActiveFile(filePath); return; } toggleEditorVisibility(true); const content = await window.pywebview.api.get_file_content(filePath); const language = getLanguageForFile(fileName); const model = monaco.editor.createModel(content, language); const tabEl = document.createElement('div'); tabEl.className = 'tab-item relative flex items-center gap-2 px-4 py-2 border-r flex-shrink-0'; tabEl.style.borderColor = 'var(--border-color)'; tabEl.dataset.path = filePath; tabEl.dataset.action = 'switch-tab'; tabEl.draggable = true; tabEl.innerHTML = `<span class="unsaved-dot hidden text-white mr-1 absolute left-1.5 top-1/2 -translate-y-1/2 text-xs">●</span><span class="ml-4 pointer-events-none">${fileName}</span><button class="close-tab p-0.5 rounded-full ml-2" data-action="close-tab" data-path="${filePath}"><i data-lucide="x" class="w-4 h-4 pointer-events-none"></i></button>`; if (tabsContainerEl.innerText.includes('No file open')) tabsContainerEl.innerHTML = ''; tabsContainerEl.appendChild(tabEl); lucide.createIcons(); const fileData = { model, tabEl, isDirty: false, language }; model.onDidChangeContent(() => { if (!fileData.isDirty) { fileData.isDirty = true; tabEl.classList.add('dirty'); tabEl.querySelector('.unsaved-dot').classList.remove('hidden'); updateStatusBar(filePath, true, language); updateSaveStateInUI(); } }); openFiles.set(filePath, fileData); setActiveFile(filePath); }
+        function setActiveFile(filePath) { if (!editor || activeFile === filePath || !openFiles.has(filePath)) return; toggleEditorVisibility(true); if (activeFile && openFiles.has(activeFile)) { openFiles.get(activeFile).tabEl.style.backgroundColor = 'transparent'; openFiles.get(activeFile).tabEl.style.color = 'var(--text-secondary)'; } const { model, tabEl, isDirty, language } = openFiles.get(filePath); tabEl.style.backgroundColor = 'var(--bg-primary)'; tabEl.style.color = 'var(--text-primary)'; editor.setModel(model); monaco.editor.setModelLanguage(editor.getModel(), language); if (editor.getOptions().get(monaco.editor.EditorOption.readOnly)) editor.updateOptions({ readOnly: false }); activeFile = filePath; updateStatusBar(filePath, isDirty, language); updateSaveStateInUI(); }
+        function closeFile(filePath) { const fileData = openFiles.get(filePath); if (!fileData) return; if (fileData.isDirty && !confirm("You have unsaved changes. Are you sure you want to close?")) return; fileData.model.dispose(); fileData.tabEl.remove(); openFiles.delete(filePath); if (activeFile === filePath) { activeFile = null; const remainingFiles = Array.from(openFiles.keys()); if (remainingFiles.length > 0) { setActiveFile(remainingFiles[0]); } else { if (editor) editor.setModel(null); tabsContainerEl.innerHTML = `<div class="px-4 py-2" style="color: var(--text-secondary);">No file open</div>`; updateStatusBar(null); updateSaveStateInUI(); toggleEditorVisibility(false); } } }
+        
+        async function refreshFileTree() { if (isInlineInputActive) return; const openFolders = getOpenFolders(); const data = await window.pywebview.api.get_project_data(); if (data && data.file_tree) { fileTreeEl.innerHTML = ''; renderFileTree(fileTreeEl, data.file_tree); fileTreeEl.querySelectorAll('details').forEach(details => { if (openFolders.has(details.dataset.path)) details.open = true; }); lucide.createIcons(); } }
+        function getOpenFolders() { const openPaths = new Set(); fileTreeEl.querySelectorAll('details[open]').forEach(details => details.open && openPaths.add(details.dataset.path)); return openPaths; }
+        function renderFileTree(parentNode, nodes) {
+            nodes.forEach(node => {
+                const el = document.createElement(node.type === 'folder' ? 'details' : 'div');
+                el.className = 'text-sm'; el.dataset.path = node.path;
+                
+                // MODIFIED: Use the getIconForFile function to get the correct icon
+                const iconHtml = getIconForFile(node.name, node.type);
+                
+                let contentHtml = `<div class="file-tree-entry p-1 rounded flex items-center gap-2 cursor-pointer outline-none" tabindex="0">
+                                       ${iconHtml}
+                                       <span class="pointer-events-none">${node.name}</span>
+                                   </div>`;
+
+                if (node.type === 'folder') { 
+                    el.className += ' folder-item'; 
+                    el.innerHTML = `<summary class="list-none">${contentHtml}</summary>`; 
+                    const childrenContainer = document.createElement('div'); 
+                    childrenContainer.className = 'ml-4'; 
+                    el.appendChild(childrenContainer); 
+                    if (node.children) renderFileTree(childrenContainer, node.children); 
+                } else { 
+                    el.className += ' file-item'; 
+                    el.dataset.action = 'open-file'; 
+                    el.dataset.name = node.name; 
+                    el.innerHTML = contentHtml; 
+                }
+                parentNode.appendChild(el);
+            });
+
+        }
+
+        window.addEventListener('keydown', (e) => { if (e.ctrlKey && e.key === '`') { e.preventDefault(); toggleTerminal(); } if (e.key === 'F2' && document.activeElement.closest('.file-tree-entry')) { e.preventDefault(); showRenameInput(document.activeElement.closest('.folder-item, .file-item')); } if (e.ctrlKey) { if (e.key === 's') { e.preventDefault(); saveActiveFile(); } else if (e.key === '=' || e.key === '+') { e.preventDefault(); zoomIn(); } else if (e.key === '-') { e.preventDefault(); zoomOut(); } } });
+        window.addEventListener('click', (e) => { const actionTarget = e.target.closest('[data-action]'); const topMenuBtn = e.target.closest('.top-menu-btn'); if (topMenuBtn) { const dropdown = topMenuBtn.nextElementSibling; const isHidden = dropdown.classList.contains('hidden'); hideAllMenus(); if (isHidden) { dropdown.classList.remove('hidden'); updateSaveStateInUI(); setTimeout(() => dropdown.classList.remove('opacity-0', 'scale-95'), 10); } } else if (actionTarget && !actionTarget.classList.contains('disabled-item')) { hideAllMenus(); const [action, param] = actionTarget.dataset.action.split(':'); const path = actionTarget.dataset.path; const name = actionTarget.dataset.name; switch(action) { case 'open-file': openFile(path, name); break; case 'switch-tab': setActiveFile(path); break; case 'close-tab': e.stopPropagation(); closeFile(path); break; case 'switch-terminal': e.stopPropagation(); setActiveTerminal(actionTarget.dataset.termId); break; case 'close-terminal': e.stopPropagation(); closeTerminal(actionTarget.dataset.termId); break; case 'new-terminal': e.stopPropagation(); createNewTerminal(); break; case 'toggle-sidebar': toggleSidebar(param); break; case 'toggle-terminal': toggleTerminal(); break; case 'new-file': setView('explorer'); showCreatorInput('file', path); break; case 'new-folder': setView('explorer'); showCreatorInput('folder', path); break; case 'save': saveActiveFile(); break; case 'refresh-explorer': refreshFileTree(); break; case 'exit-app': window.pywebview.api.close_app(); break; case 'zoom-in': zoomIn(); break; case 'zoom-out': zoomOut(); break; case 'reset-zoom': resetZoom(); break; case 'delete': handleDelete(path, name); break;case 'reveal-in-explorer':window.pywebview.api.reveal_in_explorer(path); break; case 'show-about': case 'toggle-about': toggleAboutModal(); break; case 'rename': showRenameInput(document.querySelector(`[data-path="${CSS.escape(path)}"]`)); break; } } else { hideAllMenus(); } });
+        explorerPanel.addEventListener('contextmenu', (e) => { e.preventDefault(); hideAllMenus(); const targetItem = e.target.closest('.file-item, .folder-item'); const targetPath = targetItem ? targetItem.dataset.path : projectPath; contextMenuEl.innerHTML = ''; contextMenuEl.innerHTML += `<div class="menu-item" data-action="new-file" data-path="${targetPath}">New File...</div>`; contextMenuEl.innerHTML += `<div class="menu-item" data-action="new-folder" data-path="${targetPath}">New Folder...</div>`; if (targetItem) { const itemName = targetItem.querySelector('span').textContent; contextMenuEl.innerHTML += `<hr class="my-1" style="border-color: var(--border-color);"><div class="menu-item" data-action="reveal-in-explorer" data-path="${targetPath}">Reveal in File Explorer</div><div class="menu-item" data-action="rename" data-path="${targetPath}">Rename</div><div class="menu-item text-red-400" data-action="delete" data-path="${targetPath}" data-name="${itemName}">Delete</div>`; } contextMenuEl.querySelectorAll('.menu-item').forEach(el => el.className += ' px-3 py-1.5 rounded cursor-pointer'); contextMenuEl.style.left = `${e.clientX}px`; contextMenuEl.style.top = `${e.clientY}px`; contextMenuEl.classList.remove('hidden'); });
+        
+        themeSelect.addEventListener('change', (e) => { currentSettings.theme = e.target.value; applyTheme(currentSettings.theme); saveSettings(); });
+        fontFamilySelect.addEventListener('change', (e) => { currentSettings.fontFamily = e.target.value; applyAppearanceSettings(); saveSettings(); });
+        fontSizeInput.addEventListener('input', (e) => { currentSettings.fontSize = parseInt(e.target.value, 10); applyAppearanceSettings(); saveSettings(); });
+        fontWeightSelect.addEventListener('change', (e) => { currentSettings.fontWeight = e.target.value; applyAppearanceSettings(); saveSettings(); });
+        lineHeightInput.addEventListener('input', (e) => { currentSettings.lineHeight = parseFloat(e.target.value); applyAppearanceSettings(); saveSettings(); });
+        
+        function enableDragAndDrop(container, draggableSelector) { let draggingElement = null; container.addEventListener('dragstart', e => { const target = e.target.closest(draggableSelector); if (target) { draggingElement = target; setTimeout(() => target.classList.add('dragging'), 0); } }); container.addEventListener('dragend', e => { if (draggingElement) { draggingElement.classList.remove('dragging'); draggingElement = null; } }); container.addEventListener('dragover', e => { e.preventDefault(); if (!draggingElement) return; const afterElement = [...container.querySelectorAll(`${draggableSelector}:not(.dragging)`)].reduce((closest, child) => { const box = child.getBoundingClientRect(); const offset = e.clientX - box.left - box.width / 2; if (offset < 0 && offset > closest.offset) { return { offset: offset, element: child }; } else { return closest; } }, { offset: Number.NEGATIVE_INFINITY }).element; if (afterElement == null) { container.appendChild(draggingElement); } else { container.insertBefore(draggingElement, afterElement); } }); }
+        enableDragAndDrop(tabsContainerEl, '.tab-item');
+        enableDragAndDrop(terminalTabs, '.terminal-tab');
+
+        let isResizingTerminal = false;
+        terminalDragger.addEventListener('mousedown', (e) => { isResizingTerminal = true; document.body.classList.add('resizing'); document.body.style.cursor = 'row-resize'; });
+        window.addEventListener('mousemove', (e) => { if (!isResizingTerminal) return; const newHeight = window.innerHeight - e.clientY - statusBar.offsetHeight; if (newHeight > 50 && newHeight < window.innerHeight - 200) { terminalPanel.style.height = `${newHeight}px`; if(editor) editor.layout(); const activeSession = terminalSessions.get(activeTerminalId); if(activeSession) activeSession.fitAddon.fit(); } });
+        window.addEventListener('mouseup', (e) => { if (isResizingTerminal) { isResizingTerminal = false; document.body.classList.remove('resizing'); document.body.style.cursor = 'default'; } });
+        // ADD THIS NEW LISTENER
+        chatInput.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter' && chatInput.value.trim() !== '') {
+                const messageText = chatInput.value.trim();
+                chatInput.value = '';
+
+                // Add the user's message
+                addChatMessage(messageText, 'user');
+
+                const response = await window.pywebview.api.chatInput(messageText);
+
+                // Simulate a bot response
+                setTimeout(() => {
+                    addChatMessage(response, 'bot');
+                }, 1000);
+            }
+        });
+
+        window.onload = () => {
+            window.addEventListener('pywebviewready', async function(){
+                const chatHistory = await window.pywebview.api.getProjectChatHistory();
+                chatHistory.forEach((ele) => {
+                    if (ele.role === "user") addChatMessage(ele.content, 'user');
+                    else if (ele.role === "assistant") addChatMessage(ele.content, 'bot');
+                })
+            });
+        }
+
+        function addChatMessage(message, sender) {
+            const messageEl = document.createElement('div');
+            if (sender === 'user') {
+                messageEl.className = 'flex justify-end';
+                messageEl.innerHTML = `<div class="p-3 rounded-lg max-w-xs lg:max-w-md" style="background-color: var(--accent-primary); color: white;">${message}</div>`;
+            } else {
+                messageEl.className = 'flex justify-start';
+                messageEl.innerHTML = `<div class="p-3 rounded-lg max-w-xs lg:max-w-md" style="background-color: var(--bg-secondary);">${message}</div>`;
+            }
+            chatHistory.appendChild(messageEl);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        window.js_api = {
+    open_shell_tab: () => {
+        return createNewTerminal();
+    },
+    close_shell_tab: (termId) => {
+        closeTerminal(termId);
+    },
+    enter_command_and_get_output: (termId, commandWithMarker, endMarker, callbackId) => {
+                const session = terminalSessions.get(termId);
+                if (!session || session.websocket.readyState !== WebSocket.OPEN) {
+                    window.pywebview.api.command_callback(callbackId, `Error: Terminal ${termId} not found or not connected.`);
+                    return;
+                }
+
+                let outputBuffer = '';
+                const originalOnMessage = session.websocket.onmessage;
+
+                var c = 0;
+                session.websocket.onmessage = (event) => {
+                    const data = event.data;
+                    outputBuffer += data;
+                    
+                    if (originalOnMessage) {
+                        originalOnMessage(event);
+                    }
+                    
+                    if ((c > 0) && (outputBuffer.includes(`\r\n${endMarker.replace(/'/g, '')}`) || outputBuffer.endsWith(endMarker.replace(/'/g, '')))) {
+                        session.websocket.onmessage = originalOnMessage;
+
+                        let finalOutput = outputBuffer.substring(0, outputBuffer.lastIndexOf(endMarker.replace(/'/g, '')));
+                        
+                        const commandEchoIndex = finalOutput.indexOf(commandWithMarker);
+                        if (commandEchoIndex !== -1) {
+                            const afterCommandIndex = finalOutput.indexOf('\r\n', commandEchoIndex);
+                            if (afterCommandIndex !== -1) {
+                                finalOutput = finalOutput.substring(afterCommandIndex + 2);
+                            }
+                        }
+                        
+                        const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g;
+                        finalOutput = finalOutput.replace(ansiRegex, '');
+                        
+                        window.pywebview.api.command_callback(callbackId, finalOutput.trim());
+                    }
+                    c+=1;
+                };
+                
+                session.websocket.send(commandWithMarker + '\r');
+            }
+};
+    });
+    </script>
+</body>
+</html>
